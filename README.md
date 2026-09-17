@@ -23,6 +23,6 @@ $$P^{\uparrow}_{\text{lo}} = \begin{pmatrix} P_{\text{lo}} & 0 \\ 0 & 1 \end{pma
 
 The two outputs are then interpolated along the **log-Euclidean geodesic**:
 
-$$\gamma_{\text{LEM}}\left(P^{\uparrow}_{\text{lo}}, P_{\text{hi}}, \alpha\right) = \operatorname{Exp}\left( (1-\alpha) \operatorname{Log} P^{\uparrow}_{\text{lo}} + \alpha \operatorname{Log} P_{\text{hi}} \right)$$
+$$\gamma_{\text{LEM}}\left(P^{\uparrow}_{\text{lo}}, P_{\text{hi}}, \alpha\right) = \exp\left( (1-\alpha) \log P^{\uparrow}_{\text{lo}} + \alpha \log P_{\text{hi}} \right)$$
 
 where $\alpha$ is learned by backpropagation.
