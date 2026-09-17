@@ -22,10 +22,9 @@ class ABiMap(nn.Module):
         n              : input SPD matrix dimension
         m_init         : initial output dimension
         m_max          : maximum output dimension (≤ n)
-        width          : width of the tracking window on b (default 1.0)
+        tau            : sigmoid temperature (default 0.5)
         thresh_hi      : expand threshold on alpha (default 0.80)
         thresh_lo      : shrink threshold on alpha (default 0.20)
-        eps            : margin keeping alpha strictly inside (0, 1)
         parametrized   : if True, weight is parametrized on the Stiefel manifold (default True)
         orthogonal_map : {"cayley", "matrix_exp", "householder"}, orthogonal
                          parametrization method (default "cayley" if None)
@@ -42,10 +41,9 @@ class ABiMap(nn.Module):
         n: int,
         m_init: int,
         m_max: int,
-        width: float = 1.0,
+        tau: float = 0.5,
         thresh_hi: float = 0.80,
         thresh_lo: float = 0.20,
-        eps: float = 1e-4,
         parametrized: bool = True,
         orthogonal_map: Optional[Literal["cayley", "matrix_exp", "householder"]] = None,
         init_method: Literal[
@@ -70,10 +68,9 @@ class ABiMap(nn.Module):
 
         self.n = n
         self.m_max = m_max
-        self.width = width
+        self.tau = tau
         self.thresh_hi = thresh_hi
         self.thresh_lo = thresh_lo
-        self.eps = eps
         self.verbose = verbose
         self.m = m_init
 
@@ -82,13 +79,9 @@ class ABiMap(nn.Module):
         self.init_method = init_method
         self.seed = seed
 
-        self.b = nn.Parameter(
+        self.beta = nn.Parameter(
             torch.tensor(0.0, device=device, dtype=dtype)
         )
-        self.register_buffer(
-            "lo", torch.tensor(-0.5 * width, device=device, dtype=dtype)
-        )  # init alpha = 0.5
-
         self.register_parameter(
             "weight",
             nn.Parameter(
@@ -121,8 +114,7 @@ class ABiMap(nn.Module):
             raise ValueError(
                 f"Internal error: Invalid init_method '{self.init_method}'"
             )
-        self.b.zero_()
-        self.lo.fill_(-0.5 * self.width)
+        self.beta.zero_()
 
     def pad_spd(self, S, target_size):
         """Dimensionality transcending: pad an SPD matrix to a fixed size."""
@@ -134,18 +126,11 @@ class ABiMap(nn.Module):
             out[..., m + i, m + i] = 1.0
         return out
 
-    def alpha_t(self):
-        """Position of b within the tracking window, clamped to (eps, 1-eps)."""
-        return ((self.b - self.lo) / self.width).clamp(self.eps, 1.0 - self.eps)
-
-    def track(self):
-        """Slide the window so it keeps following b."""
-        b = self.b.detach()
-        self.lo.copy_(torch.clamp(self.lo, b - self.width, b))
-
-    def recenter(self, target):
-        """Shift the window so that alpha equals `target`, with b unchanged."""
-        self.lo.copy_(self.b.detach() - target * self.width)
+    def set_alpha(self, value):
+        self.beta.data = torch.tensor(
+            self.tau * np.log(value / (1 - value)),
+            dtype=self.beta.dtype, device=self.beta.device
+        )
 
     def init_candidate_column(self):
         """Initialize a new candidate column via Gram-Schmidt orthonormalization."""
@@ -156,19 +141,20 @@ class ABiMap(nn.Module):
 
     def step(self):
         """Check alpha against the transition thresholds and update m accordingly."""
-        self.track()
         alpha = self.get_alpha()
 
+        # Expand
         if alpha >= self.thresh_hi and self.m < self.m_max - 1:
             self.m += 1
             self.init_candidate_column()
-            self.recenter(0.5)
+            self.set_alpha(0.5)
             if self.verbose:
                 print(f"  [EXPAND] m → {self.m} | alpha = {self.get_alpha():.3f}")
 
+        # Shrink
         elif alpha <= self.thresh_lo and self.m > 1:
             self.m -= 1
-            self.recenter(0.5)
+            self.set_alpha(0.5)
             if self.verbose:
                 print(f"  [SHRINK] m → {self.m} | alpha = {self.get_alpha():.3f}")
 
@@ -178,7 +164,7 @@ class ABiMap(nn.Module):
             with torch.no_grad():
                 self.step()
 
-            alpha    = self.alpha_t()
+            alpha    = torch.sigmoid(self.beta / self.tau)
             m        = self.m
 
             p_hi     = bimap_transform(X, self.weight[:, :m])
@@ -194,6 +180,6 @@ class ABiMap(nn.Module):
             p  = bimap_transform(X, self.weight[:, :m_f])
             return self.pad_spd(p, self.m_max)
 
-    def get_alpha(self):   return self.alpha_t().item()
+    def get_alpha(self):   return torch.sigmoid(self.beta / self.tau).item()
     def get_m(self):       return self.m
     def get_final_m(self): return self.m + 1 if self.get_alpha() >= 0.5 else self.m
