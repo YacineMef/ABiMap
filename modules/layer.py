@@ -132,12 +132,25 @@ class ABiMap(nn.Module):
             dtype=self.beta.dtype, device=self.beta.device
         )
 
+    @torch.no_grad()
     def init_candidate_column(self):
-        """Initialize a new candidate column via Gram-Schmidt orthonormalization."""
+        """Initialize a new candidate column via Gram-Schmidt orthonormalization,
+        writing through the parametrization's right_inverse.
+        """
         W_active = self.weight.data[:, :self.m]
         w_cand   = torch.randn(self.n, device=self.weight.device, dtype=self.weight.dtype)
         w_cand   = w_cand - W_active @ (W_active.T @ w_cand)
-        self.weight.data[:, self.m] = w_cand / w_cand.norm()
+        w_cand   = w_cand / w_cand.norm()
+
+        if self.parametrized:
+            target = self.weight.data.clone()
+            target[:, self.m] = w_cand
+
+            parametrization = self.parametrizations.weight[0]  
+            new_original = parametrization.right_inverse(target)
+            self.parametrizations.weight.original.data.copy_(new_original)
+        else:
+            self.weight.data[:, self.m] = w_cand
 
     def step(self):
         """Check alpha against the transition thresholds and update m accordingly."""
@@ -147,14 +160,14 @@ class ABiMap(nn.Module):
         if alpha >= self.thresh_hi and self.m < self.m_max - 1:
             self.m += 1
             self.init_candidate_column()
-            self.set_alpha(0.5)
+            self.set_alpha(0.3)
             if self.verbose:
                 print(f"  [EXPAND] m → {self.m} | alpha = {self.get_alpha():.3f}")
 
         # Shrink
         elif alpha <= self.thresh_lo and self.m > 1:
             self.m -= 1
-            self.set_alpha(0.5)
+            self.set_alpha(0.7)
             if self.verbose:
                 print(f"  [SHRINK] m → {self.m} | alpha = {self.get_alpha():.3f}")
 
