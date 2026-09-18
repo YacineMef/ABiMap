@@ -24,3 +24,5 @@ Since $P_{\text{lo}}$ and $P_{\text{hi}}$ have different dimensions, $P_{\text{l
 $$\gamma_{\text{LEM}}\left(P^{\uparrow}_{\text{lo}}, P_{\text{hi}}, \alpha\right) = \exp\left( (1-\alpha) \log P^{\uparrow}_{\text{lo}} + \alpha \log P_{\text{hi}} \right)$$
 
 where the interpolation parameter $\alpha$ is learned by backpropagation.
+
+After training, a BiMap layer with an adapted m dimension is provided as output.
