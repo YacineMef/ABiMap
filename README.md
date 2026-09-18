@@ -3,7 +3,9 @@
 BiMap layer that learns its output dimension $m$ jointly with the weight matrix during training. 
 
 Reference : 
+
 Learning the dimension of BiMap layers in SPD networks
+
 Yacine Meftah¹, Marco Congedo², Laurent Bougrain¹ ³
 
 ¹ Université de Lorraine, CNRS, LORIA, F-54000, Nancy, France  
